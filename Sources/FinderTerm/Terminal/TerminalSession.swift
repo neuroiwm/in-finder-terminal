@@ -33,7 +33,7 @@ final class TerminalSession: NSObject {
         pty.onExit = { [weak self] _ in
             guard let self else { return }
             self.isTerminated = true
-            self.idleTimer?.invalidate()
+            self.stopIdlePolling()
             self.onExit?()
         }
         let t = terminalView.getTerminal()
@@ -54,10 +54,18 @@ final class TerminalSession: NSObject {
     }
 
     func terminate() {
-        idleTimer?.invalidate()
-        idleTimer = nil
+        stopIdlePolling()
         isTerminated = true
         pty.terminate()
+    }
+
+    private func stopIdlePolling() {
+        idleTimer?.invalidate()
+        idleTimer = nil
+    }
+
+    deinit {
+        stopIdlePolling()
     }
 
     /// テスト・デバッグ用: シェルの実cwd
@@ -65,14 +73,17 @@ final class TerminalSession: NSObject {
         inspector.shellWorkingDirectory()
     }
 
-    /// 仕様4.4: busy→idle遷移(claude終了など)を1秒ポーリングで検知して通知する
+    /// 仕様4.4: busy→idle遷移(claude終了など)を1秒ポーリングで検知して通知する。
+    /// .commonモード: ドラッグ等のeventTracking中もポーリングを止めない
     private func startIdlePolling() {
-        idleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self, !self.isTerminated else { return }
             let busy = !self.isIdle
             if self.wasBusy && !busy { self.onBecameIdle?() }
             self.wasBusy = busy
         }
+        RunLoop.main.add(timer, forMode: .common)
+        idleTimer = timer
     }
 }
 
