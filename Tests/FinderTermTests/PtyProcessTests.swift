@@ -35,4 +35,33 @@ final class PtyProcessTests: XCTestCase {
         }
         wait(for: [exp], timeout: 5.0)
     }
+
+    // Regression test: terminate() must not leave a zombie. terminate() sends SIGHUP to a
+    // still-running child and must ensure the child is reaped (waitpid'd) even though the
+    // process-exit DispatchSource is torn down before the child has actually died. If the
+    // child were never reaped, it would linger as a zombie and `kill(pid, 0)` would keep
+    // succeeding (ESRCH is only returned once the kernel has released the process entry).
+    func testTerminateReapsChildWithoutZombie() {
+        let pty = PtyProcess(shellPath: "/bin/sh",
+                             arguments: ["-c", "sleep 30"],
+                             loginShell: false,
+                             environment: ["PATH": "/usr/bin:/bin"],
+                             initialDirectory: "/tmp")
+        XCTAssertNotNil(pty)
+        guard let pty else { return }
+        let childPid = pty.pid
+
+        pty.terminate()
+
+        let deadline = Date().addingTimeInterval(5.0)
+        var reaped = false
+        while Date() < deadline {
+            if kill(childPid, 0) == -1 && errno == ESRCH {
+                reaped = true
+                break
+            }
+            usleep(50_000)
+        }
+        XCTAssertTrue(reaped, "child process \(childPid) was not reaped (zombie leak)")
+    }
 }
