@@ -1,11 +1,18 @@
 import Foundation
 import Darwin
 
-/// posix_openpt + posix_spawnによるptyシェル起動。
+/// forkpty() + execve()によるptyシェル起動。
 /// masterFDとpidを公開し、アイドル判定(tcgetpgrp)とcwd取得(proc_pidinfo)を可能にする。
+///
+/// posix_spawn + POSIX_SPAWN_SETSID + ファイルアクションでslave ptyをfd 0に開く方式は、
+/// 実機検証の結果、子シェルの制御端末(ctty)が設定されないことが判明した
+/// (`ps` でTTYが`??`、zshの`$options[monitor]`が`off`)。ctty未設定だとシェルは
+/// ジョブ制御(job control)を有効化できず、フォアグラウンドプロセスグループを
+/// 一切変更しない(tcsetpgrpを呼ばない)ため、実行中のコマンドとアイドル状態の
+/// プロンプトを`tcgetpgrp`で区別できなくなる。
+/// forkpty()はSwiftTermのLocalProcessと同様、子プロセス内でsetsid() + TIOCSCTTYを
+/// 正しい順序で実行し、ctty取得とジョブ制御を保証する。
 final class PtyProcess {
-    // Swiftに公開されないC定数(spawn.h / ttycom.h)
-    private static let POSIX_SPAWN_SETSID: Int16 = 0x0400
     private static let TIOCSWINSZ: UInt = 0x8008_7467
 
     let masterFD: Int32
@@ -25,28 +32,9 @@ final class PtyProcess {
           loginShell: Bool,
           environment: [String: String],
           initialDirectory: String) {
-        let master = posix_openpt(O_RDWR | O_NOCTTY)
-        guard master >= 0, grantpt(master) == 0, unlockpt(master) == 0,
-              let slaveNameC = ptsname(master) else {
-            if master >= 0 { close(master) }
-            return nil
-        }
-        let slavePath = String(cString: slaveNameC)
-
-        var fileActions: posix_spawn_file_actions_t?
-        posix_spawn_file_actions_init(&fileActions)
-        // setsid後に最初に開いたttyが制御端末になる。fd 0/1/2をslaveに向ける
-        posix_spawn_file_actions_addopen(&fileActions, 0, slavePath, O_RDWR, 0)
-        posix_spawn_file_actions_adddup2(&fileActions, 0, 1)
-        posix_spawn_file_actions_adddup2(&fileActions, 0, 2)
-        posix_spawn_file_actions_addclose(&fileActions, master)
-        posix_spawn_file_actions_addchdir_np(&fileActions, initialDirectory)
-
-        var attrs: posix_spawnattr_t?
-        posix_spawnattr_init(&attrs)
-        posix_spawnattr_setflags(&attrs, Self.POSIX_SPAWN_SETSID)
-
-        // ログインシェル慣例: argv[0]を"-zsh"のようにする
+        // fork前にargv/envのCバッファを構築しておく。fork〜exec間はasync-signal-safeな
+        // 呼び出し(chdir, execve, _exit)のみを行うため、strdup等のヒープ操作は
+        // すべてここで済ませる。
         let baseName = (shellPath as NSString).lastPathComponent
         let argv0 = loginShell ? "-" + baseName : baseName
         let argv: [String] = [argv0] + arguments
@@ -55,19 +43,34 @@ final class PtyProcess {
         var cEnv: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") }
         cEnv.append(nil)
 
-        var childPid: pid_t = 0
-        let rc = posix_spawn(&childPid, shellPath, &fileActions, &attrs, cArgv, cEnv)
+        func freeCStrings() {
+            cArgv.forEach { if let p = $0 { free(p) } }
+            cEnv.forEach { if let p = $0 { free(p) } }
+        }
 
-        cArgv.forEach { if let p = $0 { free(p) } }
-        cEnv.forEach { if let p = $0 { free(p) } }
-        posix_spawn_file_actions_destroy(&fileActions)
-        posix_spawnattr_destroy(&attrs)
+        var master: Int32 = -1
+        let childPid = forkpty(&master, nil, nil, nil)
 
-        guard rc == 0 else {
-            close(master)
+        if childPid < 0 {
+            freeCStrings()
             return nil
         }
 
+        if childPid == 0 {
+            // 子プロセス: forkpty()がsetsid() + TIOCSCTTYおよびfd 0/1/2の
+            // dup2をすでに実行済み。ここではasync-signal-safeな呼び出しのみ行う。
+            _ = chdir(initialDirectory)
+            cArgv.withUnsafeMutableBufferPointer { argvBuf in
+                cEnv.withUnsafeMutableBufferPointer { envBuf in
+                    _ = execve(shellPath, argvBuf.baseAddress, envBuf.baseAddress)
+                }
+            }
+            // execve失敗時のみここに到達する。
+            _exit(127)
+        }
+
+        // 親プロセス
+        freeCStrings()
         self.masterFD = master
         self.pid = childPid
         startMonitoring()
