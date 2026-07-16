@@ -167,7 +167,14 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
     }
 
     func trackerWindowDestroyed(id: CGWindowID) {
-        guard let pane = panes[id] else { return }
+        guard let pane = panes[id] else {
+            // ペイン生成前に閉じられた: 進行中の非同期生成を無効化する(仕様R3の孤児ペイン防止)
+            lastFrames[id] = nil
+            cdDebouncers[id] = nil
+            miniaturized.remove(id)
+            fullscreen.remove(id)
+            return
+        }
         if pane.session.isIdle || pane.session.isTerminated {
             removePane(id: id)
         } else {
@@ -202,6 +209,12 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
         lastFrames[pane.windowID] = nil
         detachedPanes.append(pane)
         pane.detachToFloating()
+        pane.session.onExit = { [weak self, weak pane] in
+            // detach後にシェルが自然終了した場合もフローティングウィンドウを片付ける
+            guard let self, let pane else { return }
+            pane.closeAndTerminate()
+            self.detachedPanes.removeAll { $0 === pane }
+        }
         pane.onDetachedWindowClosed = { [weak self, weak pane] in
             guard let self, let pane else { return }
             if pane.session.isIdle || pane.session.isTerminated {
@@ -246,5 +259,11 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
         alert.addButton(withTitle: "すべて終了")
         alert.addButton(withTitle: "キャンセル")
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    deinit {
+        permissionTimer?.invalidate()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        NotificationCenter.default.removeObserver(self)
     }
 }

@@ -44,6 +44,8 @@ final class FinderWindowTracker {
     // MARK: - 起動/停止
 
     func start() {
+        // 権限の再取得等でstart()が複数回呼ばれても監視やObserverが多重登録されないようにする
+        stop()
         attachToFinder()
         // Finderの再起動を監視(仕様5.1)
         let nc = NSWorkspace.shared.notificationCenter
