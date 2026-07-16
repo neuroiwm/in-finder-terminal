@@ -44,8 +44,10 @@ final class FinderWindowTracker {
     // MARK: - 起動/停止
 
     func start() {
-        // 権限の再取得等でstart()が複数回呼ばれても監視やObserverが多重登録されないようにする
-        stop()
+        // 権限の再取得等でstart()が複数回呼ばれても監視やObserverが多重登録されないようにする。
+        // ただしウィンドウ/ペインは生きたままの再接続なので、trackerWindowDestroyedは発火させない。
+        resetPendingWork()
+        teardownObserver(notifyDestroyed: false)
         attachToFinder()
         // Finderの再起動を監視(仕様5.1)
         let nc = NSWorkspace.shared.notificationCenter
@@ -54,7 +56,7 @@ final class FinderWindowTracker {
             object: nil, queue: .main) { [weak self] note in
                 guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                       app.bundleIdentifier == "com.apple.finder" else { return }
-                self?.teardownObserver()
+                self?.teardownObserver(notifyDestroyed: true)
                 self?.delegate?.trackerFinderTerminated()
         })
         workspaceTokens.append(nc.addObserver(
@@ -71,15 +73,20 @@ final class FinderWindowTracker {
     }
 
     func stop() {
-        teardownObserver()
-        workspaceTokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
-        workspaceTokens = []
-        pendingReattach?.cancel()
-        pendingReattach = nil
+        resetPendingWork()
+        teardownObserver(notifyDestroyed: true)
     }
 
     deinit {
         stop()
+    }
+
+    /// pendingReattachのキャンセルとworkspace通知の解除(start()/stop()共通の前段)
+    private func resetPendingWork() {
+        pendingReattach?.cancel()
+        pendingReattach = nil
+        workspaceTokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        workspaceTokens = []
     }
 
     private func attachToFinder() {
@@ -111,7 +118,9 @@ final class FinderWindowTracker {
         }
     }
 
-    private func teardownObserver() {
+    /// notifyDestroyed: Finder終了等でウィンドウが実際に消えた場合はtrue(delegateにdestroyedを通知)。
+    /// 権限再許可等でウィンドウ/ペインが生きたまま再接続する場合はfalse(windowsは必ずクリアするが通知はしない)。
+    private func teardownObserver(notifyDestroyed: Bool) {
         if let obs = observer {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
         }
@@ -120,7 +129,9 @@ final class FinderWindowTracker {
         let ids = Array(windows.keys)
         windows.removeAll()
         stopDragPolling()
-        ids.forEach { delegate?.trackerWindowDestroyed(id: $0) }
+        if notifyDestroyed {
+            ids.forEach { delegate?.trackerWindowDestroyed(id: $0) }
+        }
     }
 
     // MARK: - ウィンドウ登録
