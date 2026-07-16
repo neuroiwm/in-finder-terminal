@@ -17,6 +17,9 @@ final class DividerView: NSView {
         addCursorRect(bounds, cursor: .resizeUpDown)
     }
 
+    /// 非キー状態のペインへの初回クリックを吸わせない
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func mouseDown(with event: NSEvent) {
         dragStartY = NSEvent.mouseLocation.y
         onDragBegan?()

@@ -1,6 +1,11 @@
 import AppKit
 import SwiftTerm
 
+/// 非キー状態のペインへの初回クリックを吸わせない
+final class FirstMouseTerminalView: TerminalView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class TerminalSession: NSObject {
     let terminalView: TerminalView
     private let pty: PtyProcess
@@ -23,7 +28,7 @@ final class TerminalSession: NSObject {
                                    initialDirectory: initialDirectory) else { return nil }
         self.pty = pty
         self.inspector = PtyShellInspector(masterFD: pty.masterFD, shellPid: pty.pid)
-        self.terminalView = TerminalView(frame: frame)
+        self.terminalView = FirstMouseTerminalView(frame: frame)
         super.init()
 
         terminalView.terminalDelegate = self

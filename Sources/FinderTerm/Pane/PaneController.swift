@@ -31,10 +31,11 @@ final class PaneController: NSObject, NSWindowDelegate {
         panel.delegate = self
         layoutContent()
         divider.onDragBegan = { [weak self] in
-            self?.dragBaseHeight = self?.panel.frame.height ?? 0
+            guard let self, !self.isDetached else { return }
+            self.dragBaseHeight = self.panel.frame.height
         }
         divider.onDrag = { [weak self] deltaY in
-            guard let self, self.lastFinderFrameAX.height > 0 else { return }
+            guard let self, !self.isDetached, self.lastFinderFrameAX.height > 0 else { return }
             let newRatio = (self.dragBaseHeight + deltaY) / self.lastFinderFrameAX.height
             self.onRatioChanged?(newRatio)
         }
@@ -90,7 +91,10 @@ final class PaneController: NSObject, NSWindowDelegate {
     /// 「セッションを残す」: 吸着を解除して通常のタイトルバー付きウィンドウにする
     func detachToFloating() {
         isDetached = true
+        divider.isHidden = true
+        let contentRect = panel.contentRect(forFrameRect: panel.frame)
         panel.styleMask = [.titled, .closable, .resizable, .miniaturizable]
+        panel.setFrame(panel.frameRect(forContentRect: contentRect), display: true)
         panel.title = "FinderTerm — \(currentPath ?? "session")"
         panel.hasShadow = true
         panel.level = .normal
