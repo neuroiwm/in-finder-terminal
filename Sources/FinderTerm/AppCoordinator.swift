@@ -53,6 +53,7 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
         onPermissionStateChanged?(trusted)
         if trusted {
             tracker.start()
+            reevaluateAllVisibility()
         } else {
             // 剥奪: ペインを隠す(セッションは維持)
             panes.values.forEach { $0.setVisible(false) }
@@ -158,6 +159,7 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
     }
 
     func trackerWindowFullscreenChanged(id: CGWindowID, isFullscreen: Bool) {
+        guard fullscreen.contains(id) != isFullscreen else { return }
         if isFullscreen { fullscreen.insert(id) } else { fullscreen.remove(id) }
         reevaluateAllVisibility()
     }
@@ -209,6 +211,8 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
         lastFrames[pane.windowID] = nil
         detachedPanes.append(pane)
         pane.detachToFloating()
+        // 仕様5.1: 独立ウィンドウは普通のターミナルとして使う(凍結されたcurrentPathへの自動cdはもう不要)
+        pane.session.onBecameIdle = nil
         pane.session.onExit = { [weak self, weak pane] in
             // detach後にシェルが自然終了した場合もフローティングウィンドウを片付ける
             guard let self, let pane else { return }
