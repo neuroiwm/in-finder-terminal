@@ -6,22 +6,12 @@ struct PtyShellInspector: ShellInspecting {
     let shellPid: pid_t
 
     func foregroundProcessGroup() -> pid_t? {
-        // Query the foreground process group from the pty master
-        // On macOS, tcgetpgrp may return 0 for an idle shell when using certain
-        // shell flags, in which case we treat the shell itself as the foreground
         let pg = tcgetpgrp(masterFD)
-        if pg > 0 {
-            return pg
-        }
-        if pg == 0 {
-            return shellProcessGroup()
-        }
-        // pg == -1 indicates an error
-        return nil
+        return pg > 0 ? pg : nil
     }
 
     func shellProcessGroup() -> pid_t {
-        // POSIX_SPAWN_SETSIDによりシェルはセッションリーダー = pgid == pid
+        // forkptyによりシェルはセッションリーダー = pgid == pid
         let pg = getpgid(shellPid)
         return pg > 0 ? pg : shellPid
     }

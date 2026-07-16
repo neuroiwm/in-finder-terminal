@@ -42,10 +42,12 @@ final class PtyProcess {
         cArgv.append(nil)
         var cEnv: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") }
         cEnv.append(nil)
+        let cInitialDir = strdup(initialDirectory)
 
         func freeCStrings() {
             cArgv.forEach { if let p = $0 { free(p) } }
             cEnv.forEach { if let p = $0 { free(p) } }
+            if let cInitialDir = cInitialDir { free(cInitialDir) }
         }
 
         var master: Int32 = -1
@@ -53,13 +55,14 @@ final class PtyProcess {
 
         if childPid < 0 {
             freeCStrings()
+            if master >= 0 { close(master) }
             return nil
         }
 
         if childPid == 0 {
             // 子プロセス: forkpty()がsetsid() + TIOCSCTTYおよびfd 0/1/2の
             // dup2をすでに実行済み。ここではasync-signal-safeな呼び出しのみ行う。
-            _ = chdir(initialDirectory)
+            if let cInitialDir = cInitialDir { _ = chdir(cInitialDir) }
             cArgv.withUnsafeMutableBufferPointer { argvBuf in
                 cEnv.withUnsafeMutableBufferPointer { envBuf in
                     _ = execve(shellPath, argvBuf.baseAddress, envBuf.baseAddress)
