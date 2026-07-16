@@ -28,4 +28,12 @@ final class PreferencesTests: XCTestCase {
         p.panesVisible = false
         XCTAssertFalse(Preferences(defaults: defaults).panesVisible)
     }
+
+    func testGetterClampsOutOfRangeStoredValue() {
+        // セッターを経由せず不正値を直接書き込んでも、ゲッターがクランプする
+        defaults.set(5.0, forKey: "paneHeightRatio")
+        XCTAssertEqual(Preferences(defaults: defaults).paneHeightRatio, 0.9)
+        defaults.set(0.05, forKey: "paneHeightRatio")
+        XCTAssertEqual(Preferences(defaults: defaults).paneHeightRatio, 0.1)
+    }
 }
