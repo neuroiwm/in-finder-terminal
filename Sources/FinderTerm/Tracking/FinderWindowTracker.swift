@@ -39,6 +39,7 @@ final class FinderWindowTracker {
     private var dragTimer: Timer?
     private var draggingWindowID: CGWindowID?
     private var workspaceTokens: [NSObjectProtocol] = []
+    private var pendingReattach: DispatchWorkItem?
 
     // MARK: - 起動/停止
 
@@ -60,7 +61,10 @@ final class FinderWindowTracker {
                 guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                       app.bundleIdentifier == "com.apple.finder" else { return }
                 // AX木が構築されるまで少し待って再接続
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { self?.attachToFinder() }
+                self?.pendingReattach?.cancel()
+                let work = DispatchWorkItem { [weak self] in self?.attachToFinder() }
+                self?.pendingReattach = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
         })
     }
 
@@ -68,6 +72,12 @@ final class FinderWindowTracker {
         teardownObserver()
         workspaceTokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         workspaceTokens = []
+        pendingReattach?.cancel()
+        pendingReattach = nil
+    }
+
+    deinit {
+        stop()
     }
 
     private func attachToFinder() {
@@ -85,7 +95,7 @@ final class FinderWindowTracker {
         }
         guard AXObserverCreate(pid, callback, &obs) == .success, let obs else { return }
         observer = obs
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
 
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         AXObserverAddNotification(obs, app, AXNote.created as CFString, refcon)
@@ -101,7 +111,7 @@ final class FinderWindowTracker {
 
     private func teardownObserver() {
         if let obs = observer {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
         }
         observer = nil
         appElement = nil
@@ -177,7 +187,7 @@ final class FinderWindowTracker {
         guard draggingWindowID != id else { return }
         stopDragPolling()
         draggingWindowID = id
-        dragTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             if NSEvent.pressedMouseButtons & 1 == 0 {
                 self.stopDragPolling()
@@ -187,6 +197,8 @@ final class FinderWindowTracker {
                 self.delegate?.trackerWindowFrameChanged(id: id, frameAX: frame)
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        dragTimer = timer
     }
 
     private func stopDragPolling() {
@@ -208,10 +220,14 @@ final class FinderWindowTracker {
         guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posValue) == .success,
               AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success
         else { return nil }
+        guard let posRef = posValue, CFGetTypeID(posRef) == AXValueGetTypeID(),
+              let sizeRef = sizeValue, CFGetTypeID(sizeRef) == AXValueGetTypeID() else { return nil }
+        let posAXValue = unsafeDowncast(posRef, to: AXValue.self)
+        let sizeAXValue = unsafeDowncast(sizeRef, to: AXValue.self)
         var pos = CGPoint.zero
         var size = CGSize.zero
-        guard AXValueGetValue(posValue as! AXValue, .cgPoint, &pos),
-              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else { return nil }
+        guard AXValueGetValue(posAXValue, .cgPoint, &pos),
+              AXValueGetValue(sizeAXValue, .cgSize, &size) else { return nil }
         return CGRect(origin: pos, size: size)
     }
 
