@@ -29,12 +29,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// Task 13でAppCoordinatorに置き換えるまでの暫定デバッグ出力
 final class DebugTrackerDelegate: FinderWindowTrackerDelegate {
-    func trackerWindowAppeared(id: CGWindowID, frameAX: CGRect) { NSLog("appeared %d %@", id, "\(frameAX)") }
-    func trackerWindowFrameChanged(id: CGWindowID, frameAX: CGRect) { NSLog("frame %d %@", id, "\(frameAX)") }
-    func trackerWindowTitleChanged(id: CGWindowID) { NSLog("title %d", id) }
-    func trackerWindowMiniaturizedChanged(id: CGWindowID, miniaturized: Bool) { NSLog("mini %d %d", id, miniaturized ? 1 : 0) }
+    private let resolver = PathResolver()
+
+    private func logPath(_ id: CGWindowID) {
+        resolver.isBrowserWindow(windowID: id) { isBrowser in
+            NSLog("isBrowser %d = %d", id, isBrowser ? 1 : 0)
+            guard isBrowser else { return }
+            self.resolver.resolveFolderPath(windowID: id) { path in
+                NSLog("path %d = %@", id, path ?? "(nil)")
+            }
+        }
+    }
+
+    func trackerWindowAppeared(id: CGWindowID, frameAX: CGRect) { NSLog("appeared %d", id); logPath(id) }
+    func trackerWindowTitleChanged(id: CGWindowID) { NSLog("title %d", id); logPath(id) }
+    func trackerWindowFrameChanged(id: CGWindowID, frameAX: CGRect) {}
+    func trackerWindowMiniaturizedChanged(id: CGWindowID, miniaturized: Bool) {}
     func trackerWindowDestroyed(id: CGWindowID) { NSLog("destroyed %d", id) }
-    func trackerWindowFocused(id: CGWindowID) { NSLog("focused %d", id) }
-    func trackerWindowFullscreenChanged(id: CGWindowID, isFullscreen: Bool) { NSLog("fullscreen %d %d", id, isFullscreen ? 1 : 0) }
+    func trackerWindowFocused(id: CGWindowID) {}
+    func trackerWindowFullscreenChanged(id: CGWindowID, isFullscreen: Bool) {}
     func trackerFinderTerminated() { NSLog("finder terminated") }
 }
