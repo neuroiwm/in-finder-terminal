@@ -26,6 +26,9 @@ final class PathResolver {
     }
 
     /// 専用シリアルキューでNSAppleScriptを実行。2秒以内に返らなければnil(遅れて来た結果は捨てる)
+    /// 注意: AppleScriptはキャンセル不能なため、Finderが長時間ハングすると後続リクエストは
+    /// このシリアルキューに滞留する(各呼び出し側のタイムアウトは2秒で正しく発火する)。
+    /// 呼び出し側(AppCoordinator)は300msデバウンスで発行頻度を抑えており、実用上問題にならない想定。
     private func run(script source: String, completion: @escaping (String?) -> Void) {
         final class Once { var done = false }
         let once = Once()
@@ -38,6 +41,9 @@ final class PathResolver {
             var error: NSDictionary?
             let result = NSAppleScript(source: source)?
                 .executeAndReturnError(&error).stringValue
+            if let error {
+                NSLog("FinderTerm: AppleScript error: %@", error)
+            }
             DispatchQueue.main.async {
                 guard !once.done else { return }
                 once.done = true
