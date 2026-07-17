@@ -5,6 +5,8 @@ final class PaneController: NSObject, NSWindowDelegate {
     let session: TerminalSession
     var currentPath: String?
     private(set) var isDetached = false
+    /// z順序監視用: ペインパネルのウィンドウ番号
+    var panelWindowNumber: CGWindowID { CGWindowID(panel.windowNumber) }
     var onRatioChanged: ((CGFloat) -> Void)?
     var onDetachedWindowClosed: (() -> Void)?
 

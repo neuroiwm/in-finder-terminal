@@ -17,6 +17,9 @@ protocol FinderWindowTrackerDelegate: AnyObject {
     func trackerFinderTerminated()
     /// オンスクリーンのFinderウィンドウ集合が変化した(タブ切替はAX通知を発火しないためポーリングで検知)
     func trackerOnScreenWindowsChanged()
+    /// 毎ポーリングtick: オンスクリーンの通常レイヤー全ウィンドウを前面→背面順で通知
+    /// (Finderウィンドウのクリックによる前面化はAXイベントを発火しないため、z順序回復に使う)
+    func trackerWindowOrderTick(orderedIDs: [CGWindowID])
 }
 
 final class FinderWindowTracker {
@@ -155,12 +158,16 @@ final class FinderWindowTracker {
         guard let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
                 as? [[String: Any]] else { return }
         var ids: Set<CGWindowID> = []
+        var ordered: [CGWindowID] = []  // 前面→背面(CGWindowListの返却順)
         for w in list {
-            guard let pid = w[kCGWindowOwnerPID as String] as? pid_t, pid == finderPid,
-                  let layer = w[kCGWindowLayer as String] as? Int, layer == 0,
+            guard let layer = w[kCGWindowLayer as String] as? Int, layer == 0,
                   let num = w[kCGWindowNumber as String] as? CGWindowID else { continue }
-            ids.insert(num)
+            ordered.append(num)
+            if let pid = w[kCGWindowOwnerPID as String] as? pid_t, pid == finderPid {
+                ids.insert(num)
+            }
         }
+        delegate?.trackerWindowOrderTick(orderedIDs: ordered)
         guard ids != lastOnScreenIDs else { return }
         let appeared = ids.subtracting(lastOnScreenIDs)
         lastOnScreenIDs = ids

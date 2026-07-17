@@ -233,6 +233,18 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
         reevaluateAllVisibility()
     }
 
+    func trackerWindowOrderTick(orderedIDs: [CGWindowID]) {
+        // Finderウィンドウのクリック前面化はAXイベントを発火しないため、
+        // ペインより前に出てしまったFinderウィンドウを検知してz順序を回復する
+        for (id, pane) in panes {
+            guard let finderIdx = orderedIDs.firstIndex(of: id),
+                  let paneIdx = orderedIDs.firstIndex(of: pane.panelWindowNumber),
+                  finderIdx < paneIdx else { continue }
+            DebugLog.log("zorder fix id=\(id)")
+            pane.orderAboveFinder()
+        }
+    }
+
     // MARK: - ライフサイクル(仕様5.1)
 
     private func confirmClose(pane: PaneController) {
