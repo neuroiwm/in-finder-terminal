@@ -7,6 +7,9 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
     private var panes: [CGWindowID: PaneController] = [:]
     private var detachedPanes: [PaneController] = []
     private var cdDebouncers: [CGWindowID: Debouncer] = [:]
+    /// isBrowser判定の確定結果キャッシュ(false=情報ウィンドウ等、再試行しない)
+    private var browserKnown: [CGWindowID: Bool] = [:]
+    private var browserRetryCounts: [CGWindowID: Int] = [:]
     private var lastFrames: [CGWindowID: CGRect] = [:]
     private var miniaturized: Set<CGWindowID> = []
     private var fullscreen: Set<CGWindowID> = []
@@ -81,6 +84,7 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
                 && !miniaturized.contains(id)
                 && !fullscreen.contains(id)
                 && onScreenIDs.contains(id)
+            DebugLog.log("visibility id=\(id) visible=\(visible) prefs=\(preferences.panesVisible) ax=\(axTrusted) mini=\(miniaturized.contains(id)) fs=\(fullscreen.contains(id)) onScreen=\(onScreenIDs.contains(id))")
             pane.setVisible(visible)
             if visible, let frame = lastFrames[id] {
                 pane.syncFrame(finderFrameAX: frame, ratio: preferences.paneHeightRatio)
@@ -97,10 +101,42 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
     // MARK: - FinderWindowTrackerDelegate
 
     func trackerWindowAppeared(id: CGWindowID, frameAX: CGRect) {
+        DebugLog.log("appeared id=\(id)")
         lastFrames[id] = frameAX
+        attemptPaneCreation(id: id)
+    }
+
+    /// isBrowser判定がタイムアウト(nil)のときは1秒後に再試行する(最大5回)。
+    /// 起動直後のAppleEventsはコールドスタートで2秒を超えることがある(実測)ため、
+    /// タイムアウトを「ブラウザウィンドウではない」と誤判定しない。
+    private func attemptPaneCreation(id: CGWindowID) {
+        guard panes[id] == nil, lastFrames[id] != nil,
+              browserKnown[id] != false else { return }
         resolver.isBrowserWindow(windowID: id) { [weak self] isBrowser in
-            guard let self, isBrowser, self.panes[id] == nil else { return }
-            self.resolver.resolveFolderPath(windowID: id) { path in
+            guard let self, self.panes[id] == nil, self.lastFrames[id] != nil else { return }
+            DebugLog.log("isBrowser id=\(id) → \(isBrowser.map { "\($0)" } ?? "unknown")")
+            switch isBrowser {
+            case .some(true):
+                self.browserKnown[id] = true
+                self.browserRetryCounts[id] = nil
+                self.createPane(id: id)
+            case .some(false):
+                self.browserKnown[id] = false
+            case .none:
+                let attempts = (self.browserRetryCounts[id] ?? 0) + 1
+                self.browserRetryCounts[id] = attempts
+                guard attempts <= 5 else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    self?.attemptPaneCreation(id: id)
+                }
+            }
+        }
+    }
+
+    private func createPane(id: CGWindowID) {
+        resolver.resolveFolderPath(windowID: id) { [weak self] path in
+            guard let self, self.panes[id] == nil else { return }
+            DebugLog.log("path id=\(id) → \(path ?? "(nil)")")
                 let initialPath = path ?? FileManager.default
                     .homeDirectoryForCurrentUser.path
                 guard let frame = self.lastFrames[id],
@@ -130,7 +166,6 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
                 }
                 self.panes[id] = pane
                 self.reevaluateAllVisibility()
-            }
         }
     }
 
@@ -165,14 +200,18 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
     }
 
     func trackerWindowFocused(id: CGWindowID) {
+        DebugLog.log("focused id=\(id) hasPane=\(panes[id] != nil)")
         panes[id]?.orderAboveFinder()
     }
 
     func trackerWindowDestroyed(id: CGWindowID) {
+        DebugLog.log("destroyed id=\(id) hasPane=\(panes[id] != nil)")
         guard let pane = panes[id] else {
             // ペイン生成前に閉じられた: 進行中の非同期生成を無効化する(仕様R3の孤児ペイン防止)
             lastFrames[id] = nil
             cdDebouncers[id] = nil
+            browserKnown[id] = nil
+            browserRetryCounts[id] = nil
             miniaturized.remove(id)
             fullscreen.remove(id)
             return
@@ -187,6 +226,11 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
 
     func trackerFinderTerminated() {
         // trackerが全ウィンドウにtrackerWindowDestroyedを発行済み(仕様5.1: 閉扱い)
+    }
+
+    func trackerOnScreenWindowsChanged() {
+        // タブ切替(AX通知なし)で表裏が入れ替わったペインの表示/非表示を追従させる
+        reevaluateAllVisibility()
     }
 
     // MARK: - ライフサイクル(仕様5.1)
@@ -247,6 +291,8 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
         panes[id] = nil
         cdDebouncers[id] = nil
         lastFrames[id] = nil
+        browserKnown[id] = nil
+        browserRetryCounts[id] = nil
         miniaturized.remove(id)
         fullscreen.remove(id)
     }

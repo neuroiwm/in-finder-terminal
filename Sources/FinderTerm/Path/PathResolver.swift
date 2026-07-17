@@ -5,12 +5,20 @@ final class PathResolver {
     private let queue = DispatchQueue(label: "com.iwama.finderterm.applescript")
     private let timeout: TimeInterval = 2.0
 
-    func isBrowserWindow(windowID: CGWindowID, completion: @escaping (Bool) -> Void) {
+    /// true/false = Finderの確定回答、nil = タイムアウト等で不明(呼び出し側でリトライすること)。
+    /// 起動直後の初回AppleEventsはコールドスタートで2秒を超えることがある(実測)。
+    func isBrowserWindow(windowID: CGWindowID, completion: @escaping (Bool?) -> Void) {
         // Finderスクリプティングの「Finder window」クラスはファイルブラウザのみを指す
         let script = """
         tell application "Finder" to return (exists Finder window id \(windowID)) as text
         """
-        run(script: script) { completion($0 == "true") }
+        run(script: script) { result in
+            switch result {
+            case "true": completion(true)
+            case "false": completion(false)
+            default: completion(nil)
+            }
+        }
     }
 
     func resolveFolderPath(windowID: CGWindowID, completion: @escaping (String?) -> Void) {
@@ -32,9 +40,11 @@ final class PathResolver {
     private func run(script source: String, completion: @escaping (String?) -> Void) {
         final class Once { var done = false }
         let once = Once()
+        let started = Date()
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
             guard !once.done else { return }
             once.done = true
+            DebugLog.log("applescript TIMEOUT (\(self.timeout)s)")
             completion(nil)
         }
         queue.async {
@@ -45,7 +55,11 @@ final class PathResolver {
                 NSLog("FinderTerm: AppleScript error: %@", error)
             }
             DispatchQueue.main.async {
-                guard !once.done else { return }
+                let elapsed = Date().timeIntervalSince(started)
+                guard !once.done else {
+                    DebugLog.log("applescript late result after \(String(format: "%.2f", elapsed))s (discarded)")
+                    return
+                }
                 once.done = true
                 completion(result)
             }
