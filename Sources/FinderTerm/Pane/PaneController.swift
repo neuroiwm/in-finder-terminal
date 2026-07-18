@@ -31,9 +31,13 @@ final class PaneController: NSObject, NSWindowDelegate {
         self.panel = PaneWindow(contentRect: cocoa)
         super.init()
 
-        // 背景を半透明にしてFinderの中身を透かす(1.0で従来どおり不透明)
+        // 背景を半透明にしてFinderの中身を透かす(1.0で従来どおり不透明)。
+        // SwiftTermはセル背景をnativeBackgroundColorでfillするが、土台のレイヤー背景は
+        // 初期化時の不透明色のまま更新されないため、クリアにしないと合成結果が不透明になる。
         session.terminalView.nativeBackgroundColor =
             NSColor.textBackgroundColor.withAlphaComponent(opacity)
+        session.terminalView.wantsLayer = true
+        session.terminalView.layer?.backgroundColor = NSColor.clear.cgColor
 
         panel.delegate = self
         layoutContent()
