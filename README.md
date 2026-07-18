@@ -88,6 +88,9 @@ defaults write com.iwama.finderterm debugLogging -bool true   # or false
 
 # ペイン高さ比率(通常は境界バーのドラッグで変更)
 defaults read com.iwama.finderterm paneHeightRatio
+
+# ペイン背景の不透明度(既定0.85、範囲0.3〜1.0。変更後はアプリ再起動で反映)
+defaults write com.iwama.finderterm paneOpacity -float 0.75
 ```
 
 ## 開発

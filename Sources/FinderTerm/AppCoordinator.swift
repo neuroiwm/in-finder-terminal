@@ -143,7 +143,8 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
                       let pane = PaneController(windowID: id,
                                                 finderFrameAX: frame,
                                                 initialPath: initialPath,
-                                                ratio: self.preferences.paneHeightRatio)
+                                                ratio: self.preferences.paneHeightRatio,
+                                                opacity: self.preferences.paneOpacity)
                 else { return }
                 pane.onRatioChanged = { [weak self] newRatio in
                     guard let self else { return }

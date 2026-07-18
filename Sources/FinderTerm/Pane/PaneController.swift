@@ -15,7 +15,8 @@ final class PaneController: NSObject, NSWindowDelegate {
     private var lastFinderFrameAX: CGRect
     private var dragBaseHeight: CGFloat = 0
 
-    init?(windowID: CGWindowID, finderFrameAX: CGRect, initialPath: String, ratio: CGFloat) {
+    init?(windowID: CGWindowID, finderFrameAX: CGRect, initialPath: String, ratio: CGFloat,
+          opacity: CGFloat = 1.0) {
         guard let session = TerminalSession(
             initialDirectory: initialPath,
             frame: CGRect(x: 0, y: 0, width: finderFrameAX.width,
@@ -29,6 +30,10 @@ final class PaneController: NSObject, NSWindowDelegate {
         let cocoa = FrameMath.axToCocoa(paneAX, primaryScreenHeight: Self.primaryScreenHeight())
         self.panel = PaneWindow(contentRect: cocoa)
         super.init()
+
+        // 背景を半透明にしてFinderの中身を透かす(1.0で従来どおり不透明)
+        session.terminalView.nativeBackgroundColor =
+            NSColor.textBackgroundColor.withAlphaComponent(opacity)
 
         panel.delegate = self
         layoutContent()

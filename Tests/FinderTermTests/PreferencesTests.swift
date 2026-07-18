@@ -36,4 +36,15 @@ final class PreferencesTests: XCTestCase {
         defaults.set(0.05, forKey: "paneHeightRatio")
         XCTAssertEqual(Preferences(defaults: defaults).paneHeightRatio, 0.1)
     }
+
+    func testPaneOpacityDefaultsAndClamps() {
+        // 既定0.85、[0.3, 1.0]にクランプ(ゲッター側も)
+        XCTAssertEqual(Preferences(defaults: defaults).paneOpacity, 0.85)
+        defaults.set(0.1, forKey: "paneOpacity")
+        XCTAssertEqual(Preferences(defaults: defaults).paneOpacity, 0.3)
+        defaults.set(1.5, forKey: "paneOpacity")
+        XCTAssertEqual(Preferences(defaults: defaults).paneOpacity, 1.0)
+        defaults.set(0.7, forKey: "paneOpacity")
+        XCTAssertEqual(Preferences(defaults: defaults).paneOpacity, 0.7)
+    }
 }

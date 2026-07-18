@@ -13,7 +13,9 @@ final class PaneWindow: NSPanel {
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         animationBehavior = .none
-        backgroundColor = .textBackgroundColor
+        // 背景はTerminalViewが描く(paneOpacity対応のため、ウィンドウ自体は透明)
+        isOpaque = false
+        backgroundColor = .clear
         hasShadow = false
     }
 
