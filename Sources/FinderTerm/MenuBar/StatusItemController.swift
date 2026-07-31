@@ -136,12 +136,27 @@ extension StatusItemController: NSMenuDelegate {
         index += 1
 
         for entry in entries {
-            let item = NSMenuItem(title: entry.title,
-                                  action: #selector(activateSession(_:)),
-                                  keyEquivalent: "")
-            item.target = self
-            item.representedObject = SessionMenuAction(entry.activate)
+            let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
             item.indentationLevel = 1
+            if let release = entry.releaseAnchor {
+                // アンカー中はサブメニューで「前面へ」と「追従を再開」を出し分ける
+                let sub = NSMenu()
+                let show = NSMenuItem(title: "このウィンドウを前面へ",
+                                      action: #selector(activateSession(_:)), keyEquivalent: "")
+                show.target = self
+                show.representedObject = SessionMenuAction(entry.activate)
+                sub.addItem(show)
+                let resume = NSMenuItem(title: "追従を再開(アンカー解除)",
+                                        action: #selector(activateSession(_:)), keyEquivalent: "")
+                resume.target = self
+                resume.representedObject = SessionMenuAction(release)
+                sub.addItem(resume)
+                item.submenu = sub
+            } else {
+                item.action = #selector(activateSession(_:))
+                item.target = self
+                item.representedObject = SessionMenuAction(entry.activate)
+            }
             menu.insertItem(item, at: index)
             sessionItems.append(item)
             index += 1

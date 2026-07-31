@@ -97,28 +97,45 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
     struct SessionMenuEntry {
         let title: String
         let activate: () -> Void
+        /// アンカー中のセッションのみ非nil: 追従を再開する
+        let releaseAnchor: (() -> Void)?
     }
 
     func sessionMenuEntries() -> [SessionMenuEntry] {
         var entries: [SessionMenuEntry] = []
         for (id, pane) in panes.sorted(by: { $0.key < $1.key }) {
-            let path = (pane.currentPath as NSString?)?.abbreviatingWithTildeInPath ?? "?"
+            // アンカー中はシェルの実cwd(作業フォルダ)を表示する方が実態に合う
+            let displayPath = pane.session.isAnchored
+                ? (pane.session.debugShellCwd() ?? pane.currentPath)
+                : pane.currentPath
+            let path = (displayPath as NSString?)?.abbreviatingWithTildeInPath ?? "?"
             let cmd = pane.session.foregroundCommandName.map { " — \($0) 実行中" } ?? ""
+            let anchor = pane.session.isAnchored ? " ⚓" : ""
             let hidden = userHidden.contains(id) ? "(非表示)" : ""
-            entries.append(SessionMenuEntry(title: "\(path)\(cmd)\(hidden)") { [weak self] in
+            let release: (() -> Void)? = pane.session.isAnchored ? { [weak pane] in
+                guard let pane else { return }
+                pane.session.releaseAnchor()
+                // 解除したら現在のFinderフォルダへ即追従
+                if let current = pane.currentPath {
+                    pane.session.syncDirectoryIfIdle(to: current)
+                }
+            } : nil
+            entries.append(SessionMenuEntry(title: "\(path)\(cmd)\(anchor)\(hidden)",
+                                            activate: { [weak self] in
                 guard let self else { return }
                 // 隠していたら再表示し、そのウィンドウ/タブを前面へ
                 self.userHidden.remove(id)
                 self.reevaluateAllVisibility()
                 self.resolver.raiseFinderWindow(windowID: id)
-            })
+            }, releaseAnchor: release))
         }
         for pane in detachedPanes {
             let path = (pane.currentPath as NSString?)?.abbreviatingWithTildeInPath ?? "?"
             let cmd = pane.session.foregroundCommandName.map { " — \($0) 実行中" } ?? ""
-            entries.append(SessionMenuEntry(title: "\(path)\(cmd)(独立ウィンドウ)") { [weak pane] in
+            entries.append(SessionMenuEntry(title: "\(path)\(cmd)(独立ウィンドウ)",
+                                            activate: { [weak pane] in
                 pane?.orderFrontDetached()
-            })
+            }, releaseAnchor: nil))
         }
         return entries
     }
@@ -282,6 +299,10 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
 
     func trackerWindowOrderTick(orderedIDs: [CGWindowID]) {
         lastOrderedIDs = orderedIDs
+        // アンカー状態の更新(仕様4.6: 長時間コマンド終了でそのフォルダに固定)
+        for (_, pane) in panes {
+            pane.session.tickAnchorState()
+        }
         // Finderウィンドウのクリック前面化はAXイベントを発火しないため、
         // ペインより前に出てしまったFinderウィンドウを検知してz順序を回復する
         for (id, pane) in panes {
