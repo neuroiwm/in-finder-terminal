@@ -295,6 +295,11 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
     func trackerOnScreenWindowsChanged() {
         // タブ切替(AX通知なし)で表裏が入れ替わったペインの表示/非表示を追従させる
         reevaluateAllVisibility()
+        // Finderハング等でisBrowser判定に失敗しペインが作れなかったウィンドウの再試行
+        for id in lastFrames.keys where panes[id] == nil && browserKnown[id] != false {
+            browserRetryCounts[id] = 0
+            attemptPaneCreation(id: id)
+        }
     }
 
     func trackerWindowOrderTick(orderedIDs: [CGWindowID]) {

@@ -48,6 +48,7 @@ final class FinderWindowTracker {
     private var finderPid: pid_t = 0
     private var visibilityTimer: Timer?
     private var lastOnScreenIDs: Set<CGWindowID> = []
+    private var lastRecoveryAttempt = Date.distantPast
 
     // MARK: - 起動/停止
 
@@ -168,7 +169,18 @@ final class FinderWindowTracker {
             }
         }
         delegate?.trackerWindowOrderTick(orderedIDs: ordered)
-        guard ids != lastOnScreenIDs else { return }
+        guard ids != lastOnScreenIDs else {
+            // Finderハング中はAX属性が読めず登録に失敗する。回復後に集合変化が
+            // 起きないケースがあるため、未追跡のオンスクリーンウィンドウが残っていたら
+            // 5秒間隔で再列挙を試みる(ハング中の連打でmainスレッドを塞がないよう抑制)
+            let untracked = ids.subtracting(windows.keys)
+            if !untracked.isEmpty, Date().timeIntervalSince(lastRecoveryAttempt) > 5 {
+                lastRecoveryAttempt = Date()
+                DebugLog.log("recovery reenumerate: untracked=\(untracked.sorted())")
+                reenumerateWindows()
+            }
+            return
+        }
         let appeared = ids.subtracting(lastOnScreenIDs)
         lastOnScreenIDs = ids
         DebugLog.log("onScreen changed: now=\(ids.sorted()) appeared=\(appeared.sorted())")
