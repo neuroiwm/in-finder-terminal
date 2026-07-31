@@ -10,6 +10,7 @@
 - [ ] Finderでフォルダ移動するとアイドルなシェルが自動cdされる
 - [ ] `claude` (または `sleep 60`) 実行中にフォルダ移動してもcdされない
 - [ ] claudeをCtrl+Cで終了→シェルはその場に留まり `claude --resume` でセッションが見つかる(v1.1: 自動再同期は廃止)
+- [ ] ペイン内のclaudeで「Transcript saving is off」警告が**出ない**こと(v1.2: セッションマーカーの環境変数を無害化。自動テスト: testShellEnvironmentIsSanitizedFromClaudeSessionMarkers)
 - [x] 30秒以上のコマンド終了後はアンカーされ、Finderでフォルダ移動しても自動cdされない(自動テスト済み: testAnchorAfterLongCommandAndReleaseByManualCd)
 - [x] アンカー中に手動で `cd` すると追従が再開する(自動テスト済み)
 - [ ] メニューバーのセッション一覧でアンカー中は⚓表示になり、サブメニューの「追従を再開」で解除→現在のFinderフォルダに追従する

@@ -63,6 +63,36 @@ final class TerminalSessionTests: XCTestCase {
         }, "/usr/share")
     }
 
+    func testShellEnvironmentIsSanitizedFromClaudeSessionMarkers() throws {
+        // テストプロセス自身を「Claude Codeセッション内」に見せかける
+        setenv("CLAUDE_CODE_CHILD_SESSION", "1", 1)
+        setenv("CLAUDECODE", "1", 1)
+        defer {
+            unsetenv("CLAUDE_CODE_CHILD_SESSION")
+            unsetenv("CLAUDECODE")
+        }
+        let session = try XCTUnwrap(
+            TerminalSession(initialDirectory: "/tmp",
+                            frame: NSRect(x: 0, y: 0, width: 400, height: 300)))
+        defer { session.terminate() }
+        waitUntil(timeout: 5.0) { session.isIdle }
+
+        // シェルの実環境をps ewwで観測し、マーカーが伝播していないことを確認
+        let shellPid = try XCTUnwrap(session.debugShellPid())
+        let ps = Process()
+        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+        ps.arguments = ["eww", String(shellPid)]
+        let pipe = Pipe()
+        ps.standardOutput = pipe
+        try ps.run()
+        ps.waitUntilExit()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        XCTAssertFalse(output.contains("CLAUDE_CODE_CHILD_SESSION"),
+                       "セッションマーカーがペインのシェルに漏れている")
+        XCTAssertFalse(output.contains("CLAUDECODE="),
+                       "CLAUDECODEマーカーがペインのシェルに漏れている")
+    }
+
     private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) {
         let deadline = Date(timeIntervalSinceNow: timeout)
         while !condition() && Date() < deadline {

@@ -18,6 +18,14 @@ final class TerminalSession: NSObject {
         var env = ProcessInfo.processInfo.environment
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
+        // FinderTerm自身がClaude Codeセッション内から起動された場合(開発時のopen等)、
+        // セッションマーカーがシェル→claudeへ連鎖し、ペイン内のclaudeが「子セッション」と
+        // 誤認されてトランスクリプト保存が無効化される(--resume不能になる)。必ず除去する。
+        // CLAUDE_CONFIG_DIR等のユーザー設定(CLAUDE_CODE_接頭辞なし)は保持する。
+        for key in env.keys where key.hasPrefix("CLAUDE_CODE_")
+            || ["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_JOB_DIR"].contains(key) {
+            env.removeValue(forKey: key)
+        }
         guard let pty = PtyProcess(shellPath: shellPath,
                                    arguments: [],
                                    loginShell: true,
@@ -107,6 +115,11 @@ final class TerminalSession: NSObject {
     /// テスト用: ptyへ生の入力を書き込む(キー入力相当)
     func sendInput(_ text: String) {
         pty.write(Array(text.utf8))
+    }
+
+    /// テスト用: シェルのPID
+    func debugShellPid() -> pid_t? {
+        isTerminated ? nil : pty.pid
     }
 
     /// フォアグラウンドで実行中のコマンド名(アイドル時・取得失敗時はnil)。セッション一覧表示用
