@@ -33,7 +33,16 @@ Finderウィンドウの下部に吸着するターミナルペイン。Finder�
 
 ## インストール
 
-### 方法1: ビルド済みアプリをダウンロード
+### 方法1: Homebrew(推奨)
+
+```bash
+brew tap neuroiwm/tap
+brew install --cask --no-quarantine finderterm
+```
+
+`--no-quarantine` を付けるとGatekeeperのブロックを回避できる(公証なしアプリのため)。付けずにインストールした場合は方法2の回避手順を参照。
+
+### 方法2: ビルド済みアプリをダウンロード
 
 [Releases](https://github.com/neuroiwm/in-finder-terminal/releases) から `FinderTerm.zip` をダウンロードして展開し、`FinderTerm.app` をアプリケーションフォルダに移動する。**Apple Silicon (arm64) 専用**。
 
@@ -47,7 +56,7 @@ Finderウィンドウの下部に吸着するターミナルペイン。Finder�
 >
 > また、ad-hoc署名の性質上、**新しいバージョンに差し替えるたびにアクセシビリティ権限の再付与が必要**(システム設定でオフ→オン)。この手間を避けたい場合はソースからのビルド(自己署名証明書での署名)を推奨。
 
-### 方法2: ソースからビルド
+### 方法3: ソースからビルド
 
 ```bash
 ./scripts/build-app.sh
