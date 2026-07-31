@@ -37,6 +37,7 @@ Finderウィンドウの下部に吸着するターミナルペイン。Finder�
 
 ```bash
 brew tap neuroiwm/tap
+brew trust neuroiwm/tap
 brew install --cask --no-quarantine finderterm
 ```
 
