@@ -112,6 +112,12 @@ final class PaneController: NSObject, NSWindowDelegate {
         panel.orderFront(nil)
     }
 
+    /// セッション一覧から独立ウィンドウを前面に出す
+    func orderFrontDetached() {
+        guard isDetached else { return }
+        panel.makeKeyAndOrderFront(nil)
+    }
+
     func closeAndTerminate() {
         session.terminate()
         panel.delegate = nil

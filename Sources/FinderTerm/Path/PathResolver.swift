@@ -33,6 +33,17 @@ final class PathResolver {
         }
     }
 
+    /// セッション一覧から選ばれたウィンドウ/タブを前面に出す(タブはset indexで表になる)
+    func raiseFinderWindow(windowID: CGWindowID) {
+        let script = """
+        tell application "Finder"
+            activate
+            set index of Finder window id \(windowID) to 1
+        end tell
+        """
+        run(script: script) { _ in }
+    }
+
     /// 専用シリアルキューでNSAppleScriptを実行。2秒以内に返らなければnil(遅れて来た結果は捨てる)
     /// 注意: AppleScriptはキャンセル不能なため、Finderが長時間ハングすると後続リクエストは
     /// このシリアルキューに滞留する(各呼び出し側のタイムアウトは2秒で正しく発火する)。

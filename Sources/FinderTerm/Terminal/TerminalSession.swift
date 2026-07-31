@@ -12,9 +12,6 @@ final class TerminalSession: NSObject {
     private let inspector: ShellInspecting
     private(set) var isTerminated = false
     var onExit: (() -> Void)?
-    var onBecameIdle: (() -> Void)?
-    private var idleTimer: Timer?
-    private var wasBusy = false
 
     init?(initialDirectory: String, frame: CGRect) {
         let shellPath = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
@@ -38,12 +35,10 @@ final class TerminalSession: NSObject {
         pty.onExit = { [weak self] _ in
             guard let self else { return }
             self.isTerminated = true
-            self.stopIdlePolling()
             self.onExit?()
         }
         let t = terminalView.getTerminal()
         pty.resize(cols: UInt16(t.cols), rows: UInt16(t.rows))
-        startIdlePolling()
     }
 
     var isIdle: Bool {
@@ -59,18 +54,8 @@ final class TerminalSession: NSObject {
     }
 
     func terminate() {
-        stopIdlePolling()
         isTerminated = true
         pty.terminate()
-    }
-
-    private func stopIdlePolling() {
-        idleTimer?.invalidate()
-        idleTimer = nil
-    }
-
-    deinit {
-        stopIdlePolling()
     }
 
     /// テスト・デバッグ用: シェルの実cwd
@@ -78,17 +63,15 @@ final class TerminalSession: NSObject {
         inspector.shellWorkingDirectory()
     }
 
-    /// 仕様4.4: busy→idle遷移(claude終了など)を1秒ポーリングで検知して通知する。
-    /// .commonモード: ドラッグ等のeventTracking中もポーリングを止めない
-    private func startIdlePolling() {
-        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self, !self.isTerminated else { return }
-            let busy = !self.isIdle
-            if self.wasBusy && !busy { self.onBecameIdle?() }
-            self.wasBusy = busy
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        idleTimer = timer
+    /// フォアグラウンドで実行中のコマンド名(アイドル時・取得失敗時はnil)。セッション一覧表示用
+    var foregroundCommandName: String? {
+        guard !isTerminated else { return nil }
+        let fg = tcgetpgrp(pty.masterFD)
+        guard fg > 0, fg != inspector.shellProcessGroup() else { return nil }
+        var buf = [CChar](repeating: 0, count: 256)
+        let n = proc_name(fg, &buf, UInt32(buf.count))
+        guard n > 0 else { return nil }
+        return String(cString: buf)
     }
 }
 

@@ -1,13 +1,21 @@
 import AppKit
 import ServiceManagement
 
+/// セッション一覧メニュー項目のactivateクロージャを保持する
+private final class SessionMenuAction: NSObject {
+    let run: () -> Void
+    init(_ run: @escaping () -> Void) { self.run = run }
+}
+
 final class StatusItemController: NSObject {
     private let statusItem: NSStatusItem
     private let coordinator: AppCoordinator
     private let preferences: Preferences
+    private let frontToggleItem = NSMenuItem()
     private let toggleItem = NSMenuItem()
     private let permissionItem = NSMenuItem()
     private let loginItem = NSMenuItem()
+    private var sessionItems: [NSMenuItem] = []
 
     init(coordinator: AppCoordinator, preferences: Preferences) {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -19,9 +27,14 @@ final class StatusItemController: NSObject {
                                            accessibilityDescription: "FinderTerm")
         let menu = NSMenu()
 
-        toggleItem.title = "ペインを表示"
-        toggleItem.keyEquivalent = "t"
-        toggleItem.keyEquivalentModifierMask = [.option, .command]
+        frontToggleItem.title = "このウィンドウのペインをトグル"
+        frontToggleItem.keyEquivalent = "t"
+        frontToggleItem.keyEquivalentModifierMask = [.option, .command]
+        frontToggleItem.target = self
+        frontToggleItem.action = #selector(toggleFrontPane)
+        menu.addItem(frontToggleItem)
+
+        toggleItem.title = "全ペインを表示(全体スイッチ)"
         toggleItem.target = self
         toggleItem.action = #selector(togglePanes)
         menu.addItem(toggleItem)
@@ -72,6 +85,14 @@ final class StatusItemController: NSObject {
         coordinator.togglePanesVisible()
     }
 
+    @objc private func toggleFrontPane() {
+        coordinator.toggleFrontmostPane()
+    }
+
+    @objc private func activateSession(_ sender: NSMenuItem) {
+        (sender.representedObject as? SessionMenuAction)?.run()
+    }
+
     @objc private func setHeight(_ sender: NSMenuItem) {
         preferences.paneHeightRatio = CGFloat(sender.tag) / 100.0
     }
@@ -100,5 +121,34 @@ extension StatusItemController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         toggleItem.state = preferences.panesVisible ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+
+        // セッション一覧をメニュー先頭に再構築
+        sessionItems.forEach { menu.removeItem($0) }
+        sessionItems = []
+        let entries = coordinator.sessionMenuEntries()
+        guard !entries.isEmpty else { return }
+
+        var index = 0
+        let header = NSMenuItem(title: "セッション", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.insertItem(header, at: index)
+        sessionItems.append(header)
+        index += 1
+
+        for entry in entries {
+            let item = NSMenuItem(title: entry.title,
+                                  action: #selector(activateSession(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = SessionMenuAction(entry.activate)
+            item.indentationLevel = 1
+            menu.insertItem(item, at: index)
+            sessionItems.append(item)
+            index += 1
+        }
+
+        let separator = NSMenuItem.separator()
+        menu.insertItem(separator, at: index)
+        sessionItems.append(separator)
     }
 }

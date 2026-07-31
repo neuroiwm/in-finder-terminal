@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator = c
         hotkeyManager.onHotkey = { [weak c] in
             DebugLog.log("hotkey ⌥⌘T fired")
-            c?.togglePanesVisible()
+            c?.toggleFrontmostPane()
         }
         hotkeyManager.register()
     }
@@ -34,10 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let editItem = NSMenuItem()
         main.addItem(editItem)
         let edit = NSMenu(title: "編集")
-        edit.addItem(withTitle: "カット", action: Selector(("cut:")), keyEquivalent: "x")
-        edit.addItem(withTitle: "コピー", action: Selector(("copy:")), keyEquivalent: "c")
-        edit.addItem(withTitle: "ペースト", action: Selector(("paste:")), keyEquivalent: "v")
-        edit.addItem(withTitle: "すべてを選択", action: Selector(("selectAll:")), keyEquivalent: "a")
+        edit.addItem(withTitle: "カット", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "コピー", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "ペースト", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "すべてを選択", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
         NSApp.mainMenu = main
     }

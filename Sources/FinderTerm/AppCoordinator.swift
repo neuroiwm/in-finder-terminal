@@ -10,6 +10,10 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
     /// isBrowser判定の確定結果キャッシュ(false=情報ウィンドウ等、再試行しない)
     private var browserKnown: [CGWindowID: Bool] = [:]
     private var browserRetryCounts: [CGWindowID: Int] = [:]
+    /// ⌥⌘Tでユーザーが個別に隠したペイン(タブ単位トグル)
+    private var userHidden: Set<CGWindowID> = []
+    /// 直近のオンスクリーンウィンドウ順(前面→背面)。最前面Finderウィンドウの特定に使う
+    private var lastOrderedIDs: [CGWindowID] = []
     private var lastFrames: [CGWindowID: CGRect] = [:]
     private var miniaturized: Set<CGWindowID> = []
     private var fullscreen: Set<CGWindowID> = []
@@ -76,11 +80,55 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
         reevaluateAllVisibility()
     }
 
+    /// ⌥⌘T: 最前面のFinderウィンドウ(タブ)のペインだけをトグルする
+    func toggleFrontmostPane() {
+        guard let id = lastOrderedIDs.first(where: { panes[$0] != nil }) else { return }
+        if userHidden.contains(id) {
+            userHidden.remove(id)
+        } else {
+            userHidden.insert(id)
+        }
+        DebugLog.log("toggle frontmost pane id=\(id) hidden=\(userHidden.contains(id))")
+        reevaluateAllVisibility()
+    }
+
+    // MARK: - セッション一覧(メニューバー)
+
+    struct SessionMenuEntry {
+        let title: String
+        let activate: () -> Void
+    }
+
+    func sessionMenuEntries() -> [SessionMenuEntry] {
+        var entries: [SessionMenuEntry] = []
+        for (id, pane) in panes.sorted(by: { $0.key < $1.key }) {
+            let path = (pane.currentPath as NSString?)?.abbreviatingWithTildeInPath ?? "?"
+            let cmd = pane.session.foregroundCommandName.map { " — \($0) 実行中" } ?? ""
+            let hidden = userHidden.contains(id) ? "(非表示)" : ""
+            entries.append(SessionMenuEntry(title: "\(path)\(cmd)\(hidden)") { [weak self] in
+                guard let self else { return }
+                // 隠していたら再表示し、そのウィンドウ/タブを前面へ
+                self.userHidden.remove(id)
+                self.reevaluateAllVisibility()
+                self.resolver.raiseFinderWindow(windowID: id)
+            })
+        }
+        for pane in detachedPanes {
+            let path = (pane.currentPath as NSString?)?.abbreviatingWithTildeInPath ?? "?"
+            let cmd = pane.session.foregroundCommandName.map { " — \($0) 実行中" } ?? ""
+            entries.append(SessionMenuEntry(title: "\(path)\(cmd)(独立ウィンドウ)") { [weak pane] in
+                pane?.orderFrontDetached()
+            })
+        }
+        return entries
+    }
+
     @objc private func reevaluateAllVisibility() {
         let onScreenIDs = Self.onScreenWindowIDs()
         for (id, pane) in panes {
             let visible = preferences.panesVisible
                 && axTrusted
+                && !userHidden.contains(id)
                 && !miniaturized.contains(id)
                 && !fullscreen.contains(id)
                 && onScreenIDs.contains(id)
@@ -155,11 +203,8 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
                         }
                     }
                 }
-                pane.session.onBecameIdle = { [weak pane] in
-                    // 仕様4.4: claude等の終了後、Finderの現在フォルダへ一度だけ再同期
-                    guard let pane, let path = pane.currentPath else { return }
-                    pane.session.syncDirectoryIfIdle(to: path)
-                }
+                // 注: かつてはbusy→idle遷移でFinderの現在フォルダへ再同期していたが、
+                // claude --resume がcwd単位でセッションを探すため廃止した(終了後もその場に留まる)
                 pane.session.onExit = { [weak self, weak pane] in
                     // 仕様5.2: シェル終了 → ペインを畳む(再起動UIはv1では省略し、ペインを破棄)
                     guard let self, let pane else { return }
@@ -215,6 +260,7 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
             browserRetryCounts[id] = nil
             miniaturized.remove(id)
             fullscreen.remove(id)
+            userHidden.remove(id)
             return
         }
         if pane.session.isIdle || pane.session.isTerminated {
@@ -235,6 +281,7 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
     }
 
     func trackerWindowOrderTick(orderedIDs: [CGWindowID]) {
+        lastOrderedIDs = orderedIDs
         // Finderウィンドウのクリック前面化はAXイベントを発火しないため、
         // ペインより前に出てしまったFinderウィンドウを検知してz順序を回復する
         for (id, pane) in panes {
@@ -268,8 +315,6 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
         lastFrames[pane.windowID] = nil
         detachedPanes.append(pane)
         pane.detachToFloating()
-        // 仕様5.1: 独立ウィンドウは普通のターミナルとして使う(凍結されたcurrentPathへの自動cdはもう不要)
-        pane.session.onBecameIdle = nil
         pane.session.onExit = { [weak self, weak pane] in
             // detach後にシェルが自然終了した場合もフローティングウィンドウを片付ける
             guard let self, let pane else { return }
@@ -308,6 +353,7 @@ final class AppCoordinator: FinderWindowTrackerDelegate {
         browserRetryCounts[id] = nil
         miniaturized.remove(id)
         fullscreen.remove(id)
+        userHidden.remove(id)
     }
 
     /// 仕様5.1: アプリ終了時の一括確認。trueなら終了してよい
