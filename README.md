@@ -38,7 +38,7 @@ Finderウィンドウの下部に吸着するターミナルペイン。Finder�
 ```bash
 brew tap neuroiwm/tap
 brew trust neuroiwm/tap
-brew install --cask --no-quarantine finderterm
+brew install --cask finderterm
 ```
 
 `--no-quarantine` を付けるとGatekeeperのブロックを回避できる(公証なしアプリのため)。付けずにインストールした場合は方法2の回避手順を参照。
